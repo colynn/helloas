@@ -15,7 +15,7 @@ if float("%d.%d" % (sys.version_info[0], sys.version_info[1])) < 2.4:
     sys.exit(1)
 
 from os import devnull,remove
-from os.path import basename,isfile,exists
+from os.path import basename,isfile,exists,basename
 import subprocess
 import time
 import socket
@@ -68,7 +68,7 @@ def get_log_list(logconfig):
             status = subprocess.call("find " + log_path + " -mtime +" + days + " |  xargs tar czvf " + log_path + "/" + tar_name + ".tar.gz",stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
             if status == 0:
                log_file = log_path + "/" + tar_name  + ".tar.gz"
-               log_list.append(log_file) 
+               log_list.append(log_file)
         except subprocess.CalledProcessError,e:
             print e
             continue
@@ -174,8 +174,8 @@ class oasApi(object):
         
         '''
         check_localfile(localfile)
-
-        desc_info = self.vault_name + localfile
+        file_name = basename(localfile)
+        desc_info = self.vault_name + file_name
         archive_id = self.vault.upload_archive(localfile, desc=desc_info)
         if archive_id != 0:
             return 0
