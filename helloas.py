@@ -65,10 +65,12 @@ def get_log_list(logconfig):
             continue
         try:
             FNULL = open(devnull, 'w')
-            status = subprocess.call("find " + log_path + " -mtime +" + days + " |  xargs tar czvf " + log_path + "/" + tar_name + ".tar.gz",stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
-            if status == 0:
-               log_file = log_path + "/" + tar_name  + ".tar.gz"
-               log_list.append(log_file)
+            subprocess.call("find " + log_path + " -mtime +" + days + " | xargs tar czvf " + log_path + "/" + tar_name + ".tar.gz",stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
+            log_file = log_path + "/" + tar_name  + ".tar.gz"
+            if (check_localfile(log_file) != False):
+                log_list.append(log_file)
+                subprocess.call("find " + log_path + "/* -mtime +" + days + " | xargs rm -f ",stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
+                log_list.append(log_file)
         except subprocess.CalledProcessError,e:
             print e
             continue
