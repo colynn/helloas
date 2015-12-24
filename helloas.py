@@ -70,7 +70,6 @@ def get_log_list(logconfig):
             if (check_localfile(log_file) != False):
                 log_list.append(log_file)
                 subprocess.call("find " + log_path + "/* -mtime +" + days + " | xargs rm -f ",stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
-                log_list.append(log_file)
         except subprocess.CalledProcessError,e:
             print e
             continue
