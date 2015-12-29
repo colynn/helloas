@@ -36,16 +36,16 @@ SECRET='}0;&KlQpLOZssxs(*%^3Kf{Q8*7Pp.+L.SgFDk,[~$co[q)Tb/_nMVSw2(D1b;o8asdsds'
 
 def check_localfile(localfile):
     if not isfile(localfile):
-        print "%s is not a regular file!" % localfile
         return False
 
 def check_log_path(log_path):
     if not exists(log_path):
-        print "%s is not exists!" % log_path
         return False  
 
 def get_log_list(logconfig):
     '''
+    return log_tar_file_list 
+	# log_list= ['/opt/tomcat/2015_12_23_opt_tomcat_logs.tar.gz']
     '''
     log_list=[]
     days = logconfig['remain_days']
@@ -56,8 +56,8 @@ def get_log_list(logconfig):
         # base on log_path defined tar file name
         log_name = log_path.split('/')
         tar_name = "_".join(log_name)
-        if len(tar_name) >= 128:
-            tar_name = tar_name[0:127]
+        if len(tar_name) >= 120:
+            tar_name = tar_name[0:120]
         date_time = time.strftime("%Y_%m_%d", time.localtime()) 
         tar_name = date_time + tar_name
 
@@ -172,13 +172,15 @@ class oasApi(object):
 
     def upload(self, localfile):
         '''
-        
+        upload the file to vault, add the desc_info.
+	    desc_info, vault_name + tar_name
         '''
-        check_localfile(localfile)
         file_name = basename(localfile)
         desc_info = self.vault_name + file_name
         archive_id = self.vault.upload_archive(localfile, desc=desc_info)
         if archive_id != 0:
+            FNULL = open(devnull, 'w')
+            subprocess.call("rm -f " + localfile,stdout=FNULL,stderr=subprocess.STDOUT, shell=True )
             return 0
 
     def multi_upload(self, localfile):
@@ -189,6 +191,10 @@ class oasApi(object):
 
     def get_archive_id(self, key_name):
         '''
+	base on key_name, retrieve the archived description.
+	   if exists this item, return specific ArchiveId,
+	   not exists the item, will return 0.
+        #key_name = vault_name + tar_file_name
         '''
         inventory_tmp = ".retrieve_inventory.tmp"
         job = self.vault.retrieve_inventory()
@@ -202,9 +208,41 @@ class oasApi(object):
             key_name = self.vault_name + key_name
             for archive in inventory_json['ArchiveList']:
                 if archive['ArchiveDescription'] == key_name:
-                #if archive['ArchiveDescription'] == "qiniucmd/qiniucmd":
                     return archive['ArchiveId'] 
             return 0
+        finally:
+            remove(inventory_tmp)
+
+    def get_archive_list(self):
+        '''
+	show archived list include ArchiveFile and ArchiveId, when items more 20, will record it to a file.
+	'''
+	inventory_tmp = ".retrieve_inventory_list.tmp"
+        job = self.vault.retrieve_inventory()
+        job.download_to_file(inventory_tmp)
+
+        # check inventory tmp file, if not exist, return -1
+        check_localfile(inventory_tmp)
+        try:
+            inventory_file = open(inventory_tmp,'r')
+            inventory_json = json.load(inventory_file)
+	    if (len(inventory_json['ArchiveList']) >= 20):
+	    	time_str = time.strftime("%Y_%m_%d_%M", time.localtime())
+		archive_file = "/tmp/" + time_str + "_archive_list.txt"
+		f1 = open(archive_file,'w')
+		for archive in  inventory_json['ArchiveList']:
+	 	    archive_line= "ArchiveFile: " + archive['ArchiveDescription'].split(self.vault_name)[1] + '\nArchiveId: ' + archive['ArchiveId'] + "\n"
+		    f1.write(archive_line)
+		    f1.write("\n")
+		f1.close()
+		print "Archive items more than 20, archived list records to the file."
+		print "ArchiveList: " + archive_file
+		sys.exit(0)
+		      	
+	    print "\nArchiveList:"
+	    print "-"*120
+            for archive in inventory_json['ArchiveList']:
+	 	print "ArchiveFile: " + archive['ArchiveDescription'].split(self.vault_name)[1] + '\nArchiveId: ' + archive['ArchiveId'] + "\n"
         finally:
             remove(inventory_tmp)
             
@@ -214,16 +252,24 @@ class oasApi(object):
         first setep, should create retrieve_archive job,
         then use the method of download_to_file get specific archived file.
         '''
-        # get archive_id according to key_name
-        archive_id = self.get_archive_id(key_name)
-    
+        if not self.check_key_name(key_name):
+            # get archive_id according to key_name
+            archive_id = self.get_archive_id(key_name)
+	    tar_name = key_name
+        else:
+            archive_id = key_name
+	    date_time = time.strftime("%Y_%m_%d_%M", time.localtime())
+	    tar_name = date_time + "_log_tmp.tar.gz"
+	if archive_id == 0:
+	    print key_name + " not exists."      
+	    sys.exit(1)
         # 新建类型为archive-retrieval的Job任务
         job = self.vault.retrieve_archive(archive_id)
         
         # 下载Job任务输出到指定文件路径, 正常下载返回 None 值.
-        status = job.download_to_file(key_name)
+        status = job.download_to_file(tar_name)
         if status == None:
-            print key_name + " download succeed."
+            print tar_name + " download succeed."
 
     def delete(self, key_name):
         '''
@@ -232,23 +278,37 @@ class oasApi(object):
             0 succeed; 
             1 not exists or deleted
         '''
-        # get archive_id according to key_name
-        archive_id = self.get_archive_id(key_name)
-        #archive_id = self.get_archive_id("qiniucmd")
-        
+	if not self.check_key_name(key_name):
+            # get archive_id according to key_name
+            archive_id = self.get_archive_id(key_name)
+        else:
+	    archive_id = key_name
         try:
             self.vault.delete_archive(archive_id)
             return 0
         except OASServerError,e:
             print e
             return 1
+    def check_key_name(self,key_name):
+ 	'''
+	'''
+	key_len = len(key_name)
+	find_status = key_name.find("_")
+	if (key_len == 128) and (find_status == -1):
+	    return True
+	else:
+	    return False
+	
 
 def main():
     from optparse import OptionParser
     parser = OptionParser()
-    parser.add_option("-u", "--upload", dest="filename", help="upload a file to your bucket ")
-    parser.add_option("-d", "--download", dest="downloadfile", help="from your bucket download a file ")
-    parser.add_option("", "--delete", dest="delete", help="from your bucket delete a file ")
+    parser.add_option("-u", "--upload", dest="filename", help="upload a file to your vault ")
+    parser.add_option("-d", "--download", dest="downloadfile", help='''download a archive file, -d [ArchiveId|ArchiveFile]
+				use ArchiveId more fast,can get ArchiveId use "helloas.py -l"''')
+    parser.add_option("-c", "--custom", action="store_true", dest="custom", help="upload custom files")
+    parser.add_option("-l", "--list", action="store_true", dest="list", help="list ArchivedFiles and ArchivedIds")
+    parser.add_option("", "--delete", dest="delete", help="from your vault delete a file ")
     (options, args) = parser.parse_args()
 
     cnf = oas_config(CONFIGFILE)
@@ -259,11 +319,7 @@ def main():
 
     cnfdict = cnf.oascnf
     qn = oasApi(cnfdict)
-    log_list = get_log_list(cnfdict)
 
-    for file in log_list:
-        qn.upload(file)
-    
     if options.filename:
         qn.upload(options.filename)
         sys.exit(0)
@@ -274,6 +330,15 @@ def main():
         status = qn.delete(options.delete)
         print status
         sys.exit(0)
+
+    if options.list:
+	qn.get_archive_list()
+	sys.exit(0)
+    # base log_path and remain_days upload file
+    if options.custom:
+	log_list = get_log_list(cnfdict)
+	for file in log_list:
+	    qn.upload(file)
 
 if __name__ == '__main__':
     main()
